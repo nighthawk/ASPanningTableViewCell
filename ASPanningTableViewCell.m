@@ -8,11 +8,14 @@
 
 #define kASPanningImageAlphaOff 0.10f
 #define kASAnimationDuration 0.25f
+#define kASDefaultDurationToCancelConfirmation 1.5 // seconds
 
 typedef enum {
   BHPanningStateAborted,
   BHPanningStateActivatedLeft,
-  BHPanningStateActivatedRight
+  BHPanningStateActivatedRight,
+  BHPanningStateRequiresConfirmationForLeft,
+  BHPanningStateRequiresConfirmationForRight
 } BHPanningState;
 
 @interface ASPanningTableViewCell ()
@@ -25,20 +28,23 @@ typedef enum {
  *
  * @see rightImageInBack
  */
-@property (nonatomic, assign) CGFloat maxMoveToLeft;
+@property (nonatomic, assign) CGFloat maxMoveForRightAction;
 
 /**
  * Limit to how far the user can move the frontView to the right, i.e., to review the image on the left. By default this is 0 if no image on the left exists or the height of the cell if there is one.
  *
  * @see leftImageInBack
  */
-@property (nonatomic, assign) CGFloat maxMoveToRight;
+@property (nonatomic, assign) CGFloat maxMoveForLeftAction;
 
 @property (nonatomic, weak) UIPanGestureRecognizer *panner;
+@property (nonatomic, weak) UITapGestureRecognizer *tapper;
 @property (nonatomic, weak) UIImageView *rightImageView;
 @property (nonatomic, weak) UIImageView *leftImageView;
 @property (nonatomic, assign) CGRect defaultLeftImageViewFrame;
 @property (nonatomic, assign) CGRect defaultRightImageViewFrame;
+@property (nonatomic, assign) BHPanningState currentState;
+
 
 - (void)handlePan:(UIPanGestureRecognizer *)panner;
 - (void)initialise;
@@ -75,9 +81,9 @@ typedef enum {
 
   self.defaultLeftImageViewFrame = CGRectNull;
   self.defaultRightImageViewFrame = CGRectNull;
-  self.leftImageInBack = nil;
-  self.rightImageInBack = nil;
-  self.maxMoveToRight = self.maxMoveToLeft = 0;
+  self.leftPanActionImage = nil;
+  self.rightPanActionImage = nil;
+  self.maxMoveForLeftAction = self.maxMoveForRightAction = 0;
 }
 
 - (void)setBackView:(UIView *)backView
@@ -86,21 +92,27 @@ typedef enum {
   
   [self.contentView insertSubview:backView belowSubview:self.frontView];
   _backView = backView;
+  
+  // register for tap (to confirm)
+  UITapGestureRecognizer *tapper = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(backViewTapped:)];
+  tapper.delegate = self;
+  [self addGestureRecognizer:tapper];
+  self.tapper = tapper;
 }
 
-- (void)setLeftImageInBack:(UIImage *)leftImageInBack
+- (void)setLeftPanActionImage:(UIImage *)leftPanActionImage
 {
   // out with the old
   [_leftImageView removeFromSuperview];
   self.leftImageView = nil;
   
   // in with the new
-  _leftImageInBack = leftImageInBack;
+  _leftPanActionImage = leftPanActionImage;
   CGFloat height = self.frame.size.height;
-  self.maxMoveToRight = height;
-  UIImageView *leftImageView = [[UIImageView alloc] initWithImage:_leftImageInBack];
+  self.maxMoveForLeftAction = height;
+  UIImageView *leftImageView = [[UIImageView alloc] initWithImage:_leftPanActionImage];
   CGRect frame = leftImageView.frame;
-  frame.origin = CGPointMake((height - _leftImageInBack.size.width) / 2, (height - _leftImageInBack.size.height) / 2);
+  frame.origin = CGPointMake((height - _leftPanActionImage.size.width) / 2, (height - _leftPanActionImage.size.height) / 2);
   leftImageView.frame = frame;
   leftImageView.alpha = kASPanningImageAlphaOff;
   [self.backView addSubview:leftImageView];
@@ -108,7 +120,7 @@ typedef enum {
   self.defaultLeftImageViewFrame = frame;
 }
 
-- (void)setRightImageInBack:(UIImage *)rightImageInBack
+- (void)setRightPanActionImage:(UIImage *)rightPanActionImage
 {
   if (nil == self.backView) {
     // Add a background view if we don't have one
@@ -123,12 +135,12 @@ typedef enum {
   }
   
   // in with the new
-  _rightImageInBack = rightImageInBack;
+  _rightPanActionImage = rightPanActionImage;
   CGFloat height = self.frame.size.height;
-  self.maxMoveToLeft = height;
-  UIImageView *rightImageView = [[UIImageView alloc] initWithImage:_rightImageInBack];
+  self.maxMoveForRightAction = height;
+  UIImageView *rightImageView = [[UIImageView alloc] initWithImage:_rightPanActionImage];
   CGRect frame = rightImageView.frame;
-  frame.origin = CGPointMake(self.frame.size.width - (height + _rightImageInBack.size.width) / 2, (height - _rightImageInBack.size.height) / 2);
+  frame.origin = CGPointMake(self.frame.size.width - (height + _rightPanActionImage.size.width) / 2, (height - _rightPanActionImage.size.height) / 2);
   rightImageView.frame = frame;
   rightImageView.alpha = kASPanningImageAlphaOff;
   [self.backView addSubview:rightImageView];
@@ -146,6 +158,19 @@ typedef enum {
     
     // Check for horizontal gesture
     return fabsf(translation.x) > fabsf(translation.y);
+    
+  } else if (gestureRecognizer == self.tapper) {
+    // check if it's a tap on the border
+    CGFloat x = [self.tapper locationInView:self].x;
+    if (BHPanningStateRequiresConfirmationForLeft == self.currentState
+        && x <= self.maxMoveForLeftAction) {
+      return YES;
+    }
+    
+    if (BHPanningStateRequiresConfirmationForRight == self.currentState
+        && x >= self.maxMoveForRightAction) {
+      return YES;
+    }
   }
   
   return NO;
@@ -162,8 +187,24 @@ typedef enum {
   self.panner = panner;
   
   // Defaults
-  self.maxMoveToLeft = self.maxMoveToRight = 0;
+  self.maxMoveForRightAction = self.maxMoveForLeftAction = 0;
   self.mode = ASPanningModeMoveImage;
+  self.confirmationTimeOut = kASDefaultDurationToCancelConfirmation;
+}
+
+- (void)backViewTapped:(UITapGestureRecognizer *)tapper
+{
+  CGPoint location = [tapper locationInView:self];
+  
+  if (CGRectContainsPoint(self.leftImageView.frame, location)) {
+    [self snapBackAndNotify:BHPanningStateActivatedLeft];
+  } else if (CGRectContainsPoint(self.rightImageView.frame, location)) {
+    [self snapBackAndNotify:BHPanningStateActivatedRight];
+  }
+  
+//  if (BHPanningStateRequiresConfirmationForLeft == self.currentState) {
+//  } else if (BHPanningStateRequiresConfirmationForRight == self.currentState) {
+//  }
 }
 
 - (void)handlePan:(UIPanGestureRecognizer *)panner
@@ -171,6 +212,7 @@ typedef enum {
   switch (panner.state) {
     case UIGestureRecognizerStateBegan:
       initialTouchPoint = [panner locationInView:self];
+      initialTouchPoint.x -= self.frontView.frame.origin.x;
       break;
       
     case UIGestureRecognizerStateChanged:
@@ -181,11 +223,11 @@ typedef enum {
     case UIGestureRecognizerStateEnded:
       ;// are we far enough to the side to activate?
       BHPanningState state = [self endPanForTouchPoint:[panner locationInView:self]];
-      [self snapBackAndNotify:state];
+      [self finishForState:state];
       break;
       
     default:
-      [self snapBackAndNotify:BHPanningStateAborted];
+      [self snapBackForAbort];
   }
 }
 
@@ -196,31 +238,31 @@ typedef enum {
   if (ASPanningModeStopAtMax == self.mode) {
     // Move the front view and stop at the max
     CGRect frontFrame = self.frontView.frame;
-    if (diff > self.maxMoveToRight) {
-      diff = self.maxMoveToRight;
-    } else if (diff < self.maxMoveToLeft * -1) {
-      diff = self.maxMoveToLeft * -1;
+    if (diff > self.maxMoveForLeftAction) {
+      diff = self.maxMoveForLeftAction;
+    } else if (diff < self.maxMoveForRightAction * -1) {
+      diff = self.maxMoveForRightAction * -1;
     }
     frontFrame.origin = CGPointMake(diff, 0);
     self.frontView.frame = frontFrame;
 
   } else if (ASPanningModeMoveImage == self.mode) {
     // Always move the front if we are allowed to move it in that direction
-    if ((diff < 0 && self.maxMoveToLeft > 0)
-        || (diff > 0  && self.maxMoveToRight > 0)) {
+    if ((diff < 0 && self.maxMoveForRightAction > 0)
+        || (diff > 0  && self.maxMoveForLeftAction > 0)) {
       CGRect frontFrame = self.frontView.frame;
       frontFrame.origin = CGPointMake(diff, 0);
       self.frontView.frame = frontFrame;
     }
     
     // Move images once the max is exceeded
-    if (diff < self.maxMoveToLeft * -1) {
+    if (diff < self.maxMoveForRightAction * -1) {
       CGRect rightImageFrame = self.defaultRightImageViewFrame;
-      rightImageFrame.origin = CGPointMake(rightImageFrame.origin.x + diff + self.maxMoveToLeft, rightImageFrame.origin.y);
+      rightImageFrame.origin = CGPointMake(rightImageFrame.origin.x + diff + self.maxMoveForRightAction, rightImageFrame.origin.y);
       self.rightImageView.frame = rightImageFrame;
-    } else if (diff > self.maxMoveToRight) {
+    } else if (diff > self.maxMoveForLeftAction) {
       CGRect leftImageFrame = self.defaultLeftImageViewFrame;
-      leftImageFrame.origin = CGPointMake(leftImageFrame.origin.x + diff - self.maxMoveToRight, leftImageFrame.origin.y);
+      leftImageFrame.origin = CGPointMake(leftImageFrame.origin.x + diff - self.maxMoveForLeftAction, leftImageFrame.origin.y);
       self.leftImageView.frame = leftImageFrame;
     }
     
@@ -230,9 +272,9 @@ typedef enum {
   
   // Adjust the alpha value of the image
   if (diff < 0) {
-    _rightImageView.alpha = MAX(kASPanningImageAlphaOff, MIN(1.0, diff * -1 / self.maxMoveToLeft));
+    _rightImageView.alpha = MAX(kASPanningImageAlphaOff, MIN(1.0, diff * -1 / self.maxMoveForRightAction));
   } else {
-    _leftImageView.alpha = MAX(kASPanningImageAlphaOff, MIN(1.0, diff / self.maxMoveToRight));
+    _leftImageView.alpha = MAX(kASPanningImageAlphaOff, MIN(1.0, diff / self.maxMoveForLeftAction));
   }
 }
 
@@ -240,17 +282,79 @@ typedef enum {
 {
   CGFloat diff = point.x - initialTouchPoint.x;
   
-  if (diff < 0 && self.maxMoveToLeft > 0 && diff * -1 >= self.maxMoveToLeft) {
-    return BHPanningStateActivatedRight;
-  } else if (diff > 0 && self.maxMoveToRight > 0 && diff >= self.maxMoveToRight) {
-    return BHPanningStateActivatedLeft;
+  if (diff < 0 && self.maxMoveForRightAction > 0 && diff * -1 >= self.maxMoveForRightAction) {
+    if (self.rightPanActionRequiresConfirmation) {
+      return BHPanningStateRequiresConfirmationForRight;
+    } else {
+      return BHPanningStateActivatedRight;
+    }
+    
+  } else if (diff > 0 && self.maxMoveForLeftAction > 0 && diff >= self.maxMoveForLeftAction) {
+    if (self.leftPanActionRequiresConfirmation) {
+      return BHPanningStateRequiresConfirmationForLeft;
+    } else {
+      return BHPanningStateActivatedLeft;
+    }
   } else {
     return BHPanningStateAborted;
   }
 }
 
+- (void)finishForState:(BHPanningState)state
+{
+  switch (state) {
+    case BHPanningStateActivatedLeft:
+    case BHPanningStateActivatedRight:
+      [self snapBackAndNotify:state];
+      break;
+
+    case BHPanningStateRequiresConfirmationForLeft:
+    case BHPanningStateRequiresConfirmationForRight:
+      [self snapToConfirmation:state];
+      break;
+
+    default:
+      [self snapBackForAbort];
+  }
+}
+
+- (void)snapToConfirmation:(BHPanningState)state
+{
+  self.currentState = state;
+
+  [UIView animateWithDuration:kASAnimationDuration
+                        delay:0
+                      options:UIViewAnimationCurveEaseOut
+                   animations:
+   ^{
+     CGRect frame = self.frontView.frame;
+     if (BHPanningStateRequiresConfirmationForLeft == state) {
+       frame.origin = CGPointMake(self.maxMoveForLeftAction, 0);
+       _leftImageView.alpha = 1.0f;
+       _leftImageView.frame = _defaultLeftImageViewFrame;
+     } else if (BHPanningStateRequiresConfirmationForRight) {
+       _rightImageView.alpha = 1.0f;
+       _rightImageView.frame = _defaultRightImageViewFrame;
+     }
+     self.frontView.frame = frame;
+   }
+                   completion:
+   ^(BOOL finished) {
+     [self performSelector:@selector(snapBackForAbort) withObject:nil afterDelay:self.confirmationTimeOut];
+   }];
+}
+
+- (void)snapBackForAbort
+{
+  [self snapBackAndNotify:BHPanningStateAborted];
+}
+
 - (void)snapBackAndNotify:(BHPanningState)state
 {
+  NSAssert(state != BHPanningStateRequiresConfirmationForLeft && state != BHPanningStateRequiresConfirmationForRight, @"Can't be in a confirmation state here!");
+
+  self.currentState = state;
+  
   UITableView *tableView = (UITableView *) self.superview;
   id delegate = tableView.delegate;
 
@@ -271,15 +375,15 @@ typedef enum {
                    completion:
    ^(BOOL finished) {
      if (BHPanningStateActivatedLeft == state) {
-       if ([delegate respondsToSelector:@selector(tableView:didActiveLeftAtIndexPath:)]) {
+       if ([delegate respondsToSelector:@selector(tableView:triggeredLeftPanActionAtIndexPath:)]) {
          NSIndexPath *path = [tableView indexPathForCell:self];
-         [delegate tableView:tableView didActiveLeftAtIndexPath:path];
+         [delegate tableView:tableView triggeredLeftPanActionAtIndexPath:path];
        }
        
      } else if (BHPanningStateActivatedRight == state) {
-       if ([delegate respondsToSelector:@selector(tableView:didActiveRightAtIndexPath:)]) {
+       if ([delegate respondsToSelector:@selector(tableView:triggeredRightPanActionAtIndexPath:)]) {
          NSIndexPath *path = [tableView indexPathForCell:self];
-         [delegate tableView:tableView didActiveRightAtIndexPath:path];
+         [delegate tableView:tableView triggeredRightPanActionAtIndexPath:path];
        }
      }
    }];

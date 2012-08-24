@@ -34,12 +34,32 @@ typedef enum {
 /**
  * Image that gets added to the left in the backView.
  */
-@property (nonatomic, strong) IBOutlet UIImage *leftImageInBack;
+@property (nonatomic, strong) IBOutlet UIImage *leftPanActionImage;
 
 /**
  * Image that gets added to the right in the backView.
  */
-@property (nonatomic, strong) IBOutlet UIImage *rightImageInBack;
+@property (nonatomic, strong) IBOutlet UIImage *rightPanActionImage;
+
+/**
+ * If the left action needs to activated manually rather than just through
+ * the panning.
+ * @default NO
+ */
+@property (nonatomic, assign) BOOL leftPanActionRequiresConfirmation;
+
+/**
+ * If the right action needs to activated manually rather than just through
+ * the panning.
+ * @default NO
+ */
+@property (nonatomic, assign) BOOL rightPanActionRequiresConfirmation;
+
+/**
+ * The time out after which confirmations are aborted.
+ * @default 1.5 (seconds)
+ */
+@property (nonatomic, assign) NSTimeInterval confirmationTimeOut;
 
 /**
  * Panning mode. Defaults to 'ASPanningModeMoveImage'.
@@ -61,7 +81,6 @@ typedef enum {
           frontView:(UIView *)frontView
            backView:(UIView *)backView;
 
-
 @end
 
 @protocol ASPanningTableViewDelegate <UITableViewDelegate>
@@ -73,7 +92,7 @@ typedef enum {
  * @param tableView The UITableView that the cell is part of
  * @param indexPath The index path of the cell in that table view
  */
-- (void)tableView:(UITableView *)tableView didActiveLeftAtIndexPath:(NSIndexPath *)indexPath;
+- (void)tableView:(UITableView *)tableView triggeredLeftPanActionAtIndexPath:(NSIndexPath *)indexPath;
 
 /**
  * Called when the user moves the frontView far enough to the left to reveal the image on the right and releases the view properly.
@@ -81,7 +100,7 @@ typedef enum {
  * @param tableView The UITableView that the cell is part of
  * @param indexPath The index path of the cell in that table view
  */
-- (void)tableView:(UITableView *)tableView didActiveRightAtIndexPath:(NSIndexPath *)indexPath;
+- (void)tableView:(UITableView *)tableView triggeredRightPanActionAtIndexPath:(NSIndexPath *)indexPath;
 
 @end
 
