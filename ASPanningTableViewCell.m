@@ -11,12 +11,12 @@
 #define kASDefaultDurationToCancelConfirmation 1.5 // seconds
 
 typedef enum {
-  BHPanningStateAborted,
-  BHPanningStateActivatedLeft,
-  BHPanningStateActivatedRight,
-  BHPanningStateRequiresConfirmationForLeft,
-  BHPanningStateRequiresConfirmationForRight
-} BHPanningState;
+  ASPanningStateAborted,
+  ASPanningStateActivatedLeft,
+  ASPanningStateActivatedRight,
+  ASPanningStateRequiresConfirmationForLeft,
+  ASPanningStateRequiresConfirmationForRight
+} ASPanningState;
 
 @interface ASPanningTableViewCell ()
 {
@@ -43,14 +43,13 @@ typedef enum {
 @property (nonatomic, weak) UIImageView *leftImageView;
 @property (nonatomic, assign) CGRect defaultLeftImageViewFrame;
 @property (nonatomic, assign) CGRect defaultRightImageViewFrame;
-@property (nonatomic, assign) BHPanningState currentState;
-
+@property (nonatomic, assign) ASPanningState currentState;
 
 - (void)handlePan:(UIPanGestureRecognizer *)panner;
 - (void)initialise;
 - (void)moveViewsForTouchPoint:(CGPoint)point;
-- (void)snapBackAndNotify:(BHPanningState)state;
-- (BHPanningState)endPanForTouchPoint:(CGPoint)point;
+- (void)snapBackAndNotify:(ASPanningState)state;
+- (ASPanningState)endPanForTouchPoint:(CGPoint)point;
 @end
 
 @implementation ASPanningTableViewCell
@@ -76,18 +75,36 @@ typedef enum {
 
 - (void)prepareForReuse
 {
+  // reset the images and anything related to them
   [self.rightImageView removeFromSuperview];
   [self.leftImageView removeFromSuperview];
-
   self.defaultLeftImageViewFrame = CGRectNull;
   self.defaultRightImageViewFrame = CGRectNull;
   self.leftPanActionImage = nil;
   self.rightPanActionImage = nil;
   self.maxMoveForLeftAction = self.maxMoveForRightAction = 0;
+  
+  // reset custom properties
+  self.backView = nil;
+  self.leftPanActionRequiresConfirmation = NO;
+  self.rightPanActionRequiresConfirmation = NO;
+  self.confirmationTimeOut = kASDefaultDurationToCancelConfirmation;
+  
+  // reset the current state
+  self.currentState = ASPanningStateAborted;
+  
+  // make sure the front is in the right place
+  CGRect frame = self.frontView.frame;
+  frame.origin = CGPointMake(0, 0);
+  self.frontView.frame = frame;
 }
 
 - (void)setBackView:(UIView *)backView
 {
+  if (_backView == backView) {
+    return;
+  }
+  
   [_backView removeFromSuperview];
   
   [self.contentView insertSubview:backView belowSubview:self.frontView];
@@ -102,9 +119,21 @@ typedef enum {
 
 - (void)setLeftPanActionImage:(UIImage *)leftPanActionImage
 {
-  // out with the old
-  [_leftImageView removeFromSuperview];
-  self.leftImageView = nil;
+  if (_leftPanActionImage == leftPanActionImage) {
+    return;
+  }
+  
+  if (nil == self.backView) {
+    // Add a background view if we don't have one
+    UIView *emptyBack = [[UIView alloc] initWithFrame:self.frame];
+    emptyBack.backgroundColor = [UIColor clearColor];
+    emptyBack.opaque = NO;
+    self.backView = emptyBack;
+  } else {
+    // out with the old
+    [_leftImageView removeFromSuperview];
+    self.leftImageView = nil;
+  }
   
   // in with the new
   _leftPanActionImage = leftPanActionImage;
@@ -122,6 +151,10 @@ typedef enum {
 
 - (void)setRightPanActionImage:(UIImage *)rightPanActionImage
 {
+  if (_rightPanActionImage == rightPanActionImage) {
+    return;
+  }
+  
   if (nil == self.backView) {
     // Add a background view if we don't have one
     UIView *emptyBack = [[UIView alloc] initWithFrame:self.frame];
@@ -162,12 +195,12 @@ typedef enum {
   } else if (gestureRecognizer == self.tapper) {
     // check if it's a tap on the border
     CGFloat x = [self.tapper locationInView:self].x;
-    if (BHPanningStateRequiresConfirmationForLeft == self.currentState
+    if (ASPanningStateRequiresConfirmationForLeft == self.currentState
         && x <= self.maxMoveForLeftAction) {
       return YES;
     }
     
-    if (BHPanningStateRequiresConfirmationForRight == self.currentState
+    if (ASPanningStateRequiresConfirmationForRight == self.currentState
         && x >= self.maxMoveForRightAction) {
       return YES;
     }
@@ -197,13 +230,13 @@ typedef enum {
   CGPoint location = [tapper locationInView:self];
   
   if (CGRectContainsPoint(self.leftImageView.frame, location)) {
-    [self snapBackAndNotify:BHPanningStateActivatedLeft];
+    [self snapBackAndNotify:ASPanningStateActivatedLeft];
   } else if (CGRectContainsPoint(self.rightImageView.frame, location)) {
-    [self snapBackAndNotify:BHPanningStateActivatedRight];
+    [self snapBackAndNotify:ASPanningStateActivatedRight];
   }
   
-//  if (BHPanningStateRequiresConfirmationForLeft == self.currentState) {
-//  } else if (BHPanningStateRequiresConfirmationForRight == self.currentState) {
+//  if (ASPanningStateRequiresConfirmationForLeft == self.currentState) {
+//  } else if (ASPanningStateRequiresConfirmationForRight == self.currentState) {
 //  }
 }
 
@@ -222,7 +255,7 @@ typedef enum {
       
     case UIGestureRecognizerStateEnded:
       ;// are we far enough to the side to activate?
-      BHPanningState state = [self endPanForTouchPoint:[panner locationInView:self]];
+      ASPanningState state = [self endPanForTouchPoint:[panner locationInView:self]];
       [self finishForState:state];
       break;
       
@@ -278,38 +311,38 @@ typedef enum {
   }
 }
 
-- (BHPanningState)endPanForTouchPoint:(CGPoint)point
+- (ASPanningState)endPanForTouchPoint:(CGPoint)point
 {
   CGFloat diff = point.x - initialTouchPoint.x;
   
   if (diff < 0 && self.maxMoveForRightAction > 0 && diff * -1 >= self.maxMoveForRightAction) {
     if (self.rightPanActionRequiresConfirmation) {
-      return BHPanningStateRequiresConfirmationForRight;
+      return ASPanningStateRequiresConfirmationForRight;
     } else {
-      return BHPanningStateActivatedRight;
+      return ASPanningStateActivatedRight;
     }
     
   } else if (diff > 0 && self.maxMoveForLeftAction > 0 && diff >= self.maxMoveForLeftAction) {
     if (self.leftPanActionRequiresConfirmation) {
-      return BHPanningStateRequiresConfirmationForLeft;
+      return ASPanningStateRequiresConfirmationForLeft;
     } else {
-      return BHPanningStateActivatedLeft;
+      return ASPanningStateActivatedLeft;
     }
   } else {
-    return BHPanningStateAborted;
+    return ASPanningStateAborted;
   }
 }
 
-- (void)finishForState:(BHPanningState)state
+- (void)finishForState:(ASPanningState)state
 {
   switch (state) {
-    case BHPanningStateActivatedLeft:
-    case BHPanningStateActivatedRight:
+    case ASPanningStateActivatedLeft:
+    case ASPanningStateActivatedRight:
       [self snapBackAndNotify:state];
       break;
 
-    case BHPanningStateRequiresConfirmationForLeft:
-    case BHPanningStateRequiresConfirmationForRight:
+    case ASPanningStateRequiresConfirmationForLeft:
+    case ASPanningStateRequiresConfirmationForRight:
       [self snapToConfirmation:state];
       break;
 
@@ -318,7 +351,7 @@ typedef enum {
   }
 }
 
-- (void)snapToConfirmation:(BHPanningState)state
+- (void)snapToConfirmation:(ASPanningState)state
 {
   self.currentState = state;
 
@@ -328,11 +361,11 @@ typedef enum {
                    animations:
    ^{
      CGRect frame = self.frontView.frame;
-     if (BHPanningStateRequiresConfirmationForLeft == state) {
+     if (ASPanningStateRequiresConfirmationForLeft == state) {
        frame.origin = CGPointMake(self.maxMoveForLeftAction, 0);
        _leftImageView.alpha = 1.0f;
        _leftImageView.frame = _defaultLeftImageViewFrame;
-     } else if (BHPanningStateRequiresConfirmationForRight) {
+     } else if (ASPanningStateRequiresConfirmationForRight) {
        _rightImageView.alpha = 1.0f;
        _rightImageView.frame = _defaultRightImageViewFrame;
      }
@@ -346,12 +379,12 @@ typedef enum {
 
 - (void)snapBackForAbort
 {
-  [self snapBackAndNotify:BHPanningStateAborted];
+  [self snapBackAndNotify:ASPanningStateAborted];
 }
 
-- (void)snapBackAndNotify:(BHPanningState)state
+- (void)snapBackAndNotify:(ASPanningState)state
 {
-  NSAssert(state != BHPanningStateRequiresConfirmationForLeft && state != BHPanningStateRequiresConfirmationForRight, @"Can't be in a confirmation state here!");
+  NSAssert(state != ASPanningStateRequiresConfirmationForLeft && state != ASPanningStateRequiresConfirmationForRight, @"Can't be in a confirmation state here!");
 
   self.currentState = state;
   
@@ -374,13 +407,13 @@ typedef enum {
    }
                    completion:
    ^(BOOL finished) {
-     if (BHPanningStateActivatedLeft == state) {
+     if (ASPanningStateActivatedLeft == state) {
        if ([delegate respondsToSelector:@selector(tableView:triggeredLeftPanActionAtIndexPath:)]) {
          NSIndexPath *path = [tableView indexPathForCell:self];
          [delegate tableView:tableView triggeredLeftPanActionAtIndexPath:path];
        }
        
-     } else if (BHPanningStateActivatedRight == state) {
+     } else if (ASPanningStateActivatedRight == state) {
        if ([delegate respondsToSelector:@selector(tableView:triggeredRightPanActionAtIndexPath:)]) {
          NSIndexPath *path = [tableView indexPathForCell:self];
          [delegate tableView:tableView triggeredRightPanActionAtIndexPath:path];
