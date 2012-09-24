@@ -190,7 +190,7 @@ typedef enum {
     CGPoint translation = [self.panner translationInView:[cell superview]];
     
     // Check for horizontal gesture
-    return fabsf(translation.x) > fabsf(translation.y);
+    return ! self.backView.isHidden && fabsf(translation.x) > fabsf(translation.y);
     
   } else if (gestureRecognizer == self.tapper) {
     // check if it's a tap on the border
