@@ -234,10 +234,6 @@ typedef enum {
   } else if (CGRectContainsPoint(self.rightImageView.frame, location)) {
     [self snapBackAndNotify:ASPanningStateActivatedRight];
   }
-  
-//  if (ASPanningStateRequiresConfirmationForLeft == self.currentState) {
-//  } else if (ASPanningStateRequiresConfirmationForRight == self.currentState) {
-//  }
 }
 
 - (void)handlePan:(UIPanGestureRecognizer *)panner
@@ -366,6 +362,7 @@ typedef enum {
        _leftImageView.alpha = 1.0f;
        _leftImageView.frame = _defaultLeftImageViewFrame;
      } else if (ASPanningStateRequiresConfirmationForRight) {
+       frame.origin = CGPointMake(- self.maxMoveForRightAction, 0);
        _rightImageView.alpha = 1.0f;
        _rightImageView.frame = _defaultRightImageViewFrame;
      }
