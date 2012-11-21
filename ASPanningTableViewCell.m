@@ -44,6 +44,7 @@ typedef enum {
 @property (nonatomic, assign) CGRect defaultLeftImageViewFrame;
 @property (nonatomic, assign) CGRect defaultRightImageViewFrame;
 @property (nonatomic, assign) ASPanningState currentState;
+@property (nonatomic, assign) BOOL previousBackViewHidden;
 
 - (void)handlePan:(UIPanGestureRecognizer *)panner;
 - (void)initialise;
@@ -71,6 +72,19 @@ typedef enum {
 - (void)awakeFromNib
 {
   [self initialise];
+}
+
+- (void)layoutSubviews
+{
+	[super layoutSubviews];
+	
+	if (self.alpha < 0.99) {
+		self.previousBackViewHidden = self.backView.hidden;
+		// we are most likely being dragged, hide the background view
+		self.backView.hidden = YES;
+	} else {
+		self.backView.hidden = self.previousBackViewHidden;
+	}
 }
 
 - (void)prepareForReuse
