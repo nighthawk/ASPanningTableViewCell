@@ -161,6 +161,8 @@ typedef enum {
   [self.backView addSubview:leftImageView];
   self.leftImageView = leftImageView;
   self.defaultLeftImageViewFrame = frame;
+	
+	self.panner.enabled = (self.leftPanActionImage != nil || self.rightPanActionImage != nil);
 }
 
 - (void)setRightPanActionImage:(UIImage *)rightPanActionImage
@@ -193,6 +195,8 @@ typedef enum {
   [self.backView addSubview:rightImageView];
   self.rightImageView = rightImageView;
   self.defaultRightImageViewFrame = frame;
+
+	self.panner.enabled = (self.leftPanActionImage != nil || self.rightPanActionImage != nil);
 }
 
 #pragma mark - UIGestureRecognizerDelegate
@@ -232,6 +236,7 @@ typedef enum {
   panner.delegate = self;
   [self.frontView addGestureRecognizer:panner];
   self.panner = panner;
+	self.panner.enabled = NO;
   
   // Defaults
   self.maxMoveForRightAction = self.maxMoveForLeftAction = 0;
