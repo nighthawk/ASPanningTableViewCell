@@ -99,7 +99,6 @@ typedef enum {
   self.maxMoveForLeftAction = self.maxMoveForRightAction = 0;
   
   // reset custom properties
-  self.backView = nil;
   self.leftPanActionRequiresConfirmation = NO;
   self.rightPanActionRequiresConfirmation = NO;
   self.confirmationTimeOut = kASDefaultDurationToCancelConfirmation;
@@ -111,6 +110,12 @@ typedef enum {
   CGRect frame = self.frontView.frame;
   frame.origin = CGPointMake(0, 0);
   self.frontView.frame = frame;
+}
+
+- (void)hideBackView:(BOOL)hidden
+{
+	self.backView.hidden = hidden;
+	self.previousBackViewHidden = hidden;
 }
 
 - (void)setBackView:(UIView *)backView

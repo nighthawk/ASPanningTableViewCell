@@ -81,6 +81,8 @@ typedef enum {
           frontView:(UIView *)frontView
            backView:(UIView *)backView;
 
+- (void)hideBackView:(BOOL)hidden;
+
 @end
 
 @protocol ASPanningTableViewDelegate <UITableViewDelegate>
