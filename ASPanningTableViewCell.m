@@ -78,9 +78,10 @@ typedef enum {
 {
 	[super layoutSubviews];
 	
-	if (self.alpha < 0.99) {
+	if (self.alpha > 0.70 && self.alpha < 0.90) {
 		self.previousBackViewHidden = self.backView.hidden;
 		// we are most likely being dragged, hide the background view
+		// the typical value for iOS 6 is 0.8
 		self.backView.hidden = YES;
 	} else {
 		self.backView.hidden = self.previousBackViewHidden;
