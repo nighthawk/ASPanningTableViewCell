@@ -378,7 +378,7 @@ typedef enum {
 
   [UIView animateWithDuration:kASAnimationDuration
                         delay:0
-                      options:UIViewAnimationCurveEaseOut
+                      options:UIViewAnimationOptionCurveEaseOut
                    animations:
    ^{
      CGRect frame = self.frontView.frame;
@@ -418,7 +418,7 @@ typedef enum {
   
   [UIView animateWithDuration:kASAnimationDuration
                         delay:0
-                      options:UIViewAnimationCurveEaseOut
+                      options:UIViewAnimationOptionCurveEaseOut
                    animations:
    ^{
      self.frontView.frame = frame;
